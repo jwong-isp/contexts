@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// wordGen reads integers from an input channel and sends a letter on an outbound channel.
+// It ends when either the `done` or `in` channel is closed.
+// It returns a channel that will receive letters prefixed with the `prefix` as strings.
 func wordGen(done <-chan struct{}, in <-chan int, prefix string) chan string {
 	alphabet := "abcdefghij"
 	out := make(chan string, 1)
@@ -26,8 +29,10 @@ func wordGen(done <-chan struct{}, in <-chan int, prefix string) chan string {
 	return out
 }
 
+// numGen outputs integers between 0 and 10 on a channel
+// It returns a channel that will recieve the generated numbers.
 func numGen(done <-chan struct{}) chan int {
-	out := make(chan int, 1)
+	out := make(chan int)
 	go func() {
 		defer close(out)
 		for i := 0; ; i++ {
@@ -44,6 +49,7 @@ func numGen(done <-chan struct{}) chan int {
 	return out
 }
 
+// taken from https://blog.golang.org/pipelines
 func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 	var wg sync.WaitGroup
 	out := make(chan string)
@@ -107,6 +113,6 @@ func main() {
 			}
 		}
 	}()
-	time.Sleep(3 * time.Second) // Wait for everything to close
+	time.Sleep(3 * time.Second) // Pretend we're doing other stuff for a while
 
 }
