@@ -20,11 +20,11 @@ func wordGen(done <-chan struct{}, in <-chan int, prefix string) chan string {
 			select {
 			case out <- output:
 			case <-done:
-				fmt.Printf("wordGen, %s, kill received\n", prefix)
+				fmt.Printf("Closing wordGen, %s, channel\n", prefix)
 				return
 			}
 		}
-		fmt.Printf("wordGen, %s, no more input from channel\n", prefix)
+		fmt.Printf("wordGen, %s, no more input from numGen channel\n", prefix)
 	}()
 	return out
 }
@@ -41,7 +41,7 @@ func numGen(done <-chan struct{}) chan int {
 			select {
 			case out <- output:
 			case <-done:
-				fmt.Println("numGen kill received")
+				fmt.Println("Closing numGen channel")
 				return
 			}
 		}
@@ -50,6 +50,7 @@ func numGen(done <-chan struct{}) chan int {
 }
 
 // taken from https://blog.golang.org/pipelines
+// Using this to show fan-in
 func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 	var wg sync.WaitGroup
 	out := make(chan string)
@@ -63,7 +64,8 @@ func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 			select {
 			case out <- n:
 			case <-done:
-				fmt.Println("Closing merge for output func")
+				fmt.Println("Stop consuming from fan-in input channel")
+				// Also decrements the WaitGroup
 				return
 			}
 		}
@@ -78,7 +80,7 @@ func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 	go func() {
 		wg.Wait()
 		close(out)
-		fmt.Println("Closed merge out")
+		fmt.Println("Closing the fan-in output channel")
 	}()
 	return out
 }
@@ -86,25 +88,33 @@ func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 func main() {
 	done := make(chan struct{})
 	nums := numGen(done)
+	// fan-out the values for nums across multiple wordGens.
 	w1 := wordGen(done, nums, "w1")
 	w2 := wordGen(done, nums, "w2")
 	term := "w1: d"
 
 	func() {
+		/*
+			Closing the channel means that all recievers of the channel will
+			get a zero value when they try to consume.
+
+			Here we will close `done` once the function exits. This could also be done
+			in the `main()` function, but I wanted to show the channels getting the
+			signal.
+		*/
 		defer close(done)
+		// fan-in the wordGens using the `merge` function
 		for v := range merge(done, w1, w2) {
 			if v == term {
-				fmt.Printf("Found %s! Now the program can continue\n", term)
-				/* Could also do this way, but that requires downstream receivers
-				to know the number of upstream senders
+				fmt.Printf("Found %s! Now main() can continue\n", term)
+				/* Could do this way instead of `defer close(done)`,
+				but this requires downstream receivers to know the number of upstream senders
 
 				done <- struct{}{}
 				done <- struct{}{}
 				done <- struct{}{}
-				*/
-				/*
-					Closing the channel means that all recievers of the channel will
-					get a zero value when they try to consume.
+
+				It is easier and more reliable to just close `done` once we are done consuming its output
 				*/
 				fmt.Println("Doing other stuff now, but all channels should be closed")
 				return
