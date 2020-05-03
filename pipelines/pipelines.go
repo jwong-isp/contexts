@@ -29,7 +29,7 @@ func wordGen(done <-chan struct{}, in <-chan int, prefix string) chan string {
 	return out
 }
 
-// numGen outputs integers between 0 and 10 on a channel
+// numGen endlessly outputs integers between 0 and 10 on a channel
 // It returns a channel that will recieve the generated numbers.
 func numGen(done <-chan struct{}) chan int {
 	out := make(chan int)
@@ -93,36 +93,36 @@ func main() {
 	w2 := wordGen(done, nums, "w2")
 	term := "w1: d"
 
-	func() {
-		/*
-			Closing the channel means that all recievers of the channel will
-			get a zero value when they try to consume.
+	/*
+		Closing the channel means that all recievers of the channel will
+		get a zero value when they try to consume.
 
-			Here we will close `done` once the function exits. This could also be done
-			in the `main()` function, but I wanted to show the channels getting the
-			signal.
-		*/
-		defer close(done)
-		// fan-in the wordGens using the `merge` function
-		for v := range merge(done, w1, w2) {
-			if v == term {
-				fmt.Printf("Found %s! Now main() can continue\n", term)
-				/* Could do this way instead of `defer close(done)`,
-				but this requires downstream receivers to know the number of upstream senders
+		Here we will close `done` once the function exits. This could also be done
+		in the `main()` function, but I wanted to show the channels getting the
+		signal.
+	*/
+	// fan-in the wordGens using the `merge` function
+	for v := range merge(done, w1, w2) {
+		if v == term {
+			fmt.Printf("Found %s! Now main() can continue\n", term)
+			/* Could do this way instead of `defer close(done)`,
+			but this requires downstream receivers to know the number of upstream senders
 
-				done <- struct{}{}
-				done <- struct{}{}
-				done <- struct{}{}
+			done <- struct{}{}
+			done <- struct{}{}
+			done <- struct{}{}
 
-				It is easier and more reliable to just close `done` once we are done consuming its output
-				*/
-				fmt.Println("Doing other stuff now, but all channels should be closed")
-				return
-			} else {
-				fmt.Printf("'%s' is not '%s'\n", v, term)
-			}
+			It is easier and more reliable to just close `done` once we are done consuming its output
+			*/
+			fmt.Println("Doing other stuff now, but all channels should be closed")
+			close(done)
+			break
+
+		} else {
+			fmt.Printf("'%s' is not '%s'\n", v, term)
 		}
-	}()
+	}
+	fmt.Println("Other stuff being done")
 	time.Sleep(3 * time.Second) // Pretend we're doing other stuff for a while
 
 }
