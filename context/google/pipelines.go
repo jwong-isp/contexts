@@ -21,7 +21,7 @@ func wordGen(ctx context.Context, in <-chan int) chan string {
 			select {
 			case out <- output:
 			case <-ctx.Done():
-				fmt.Printf("%s: Closing wordGen channel\n", prefix)
+				fmt.Printf("%s: Closing wordGen channel, reason: %s\n", prefix, ctx.Err())
 				return
 			}
 		}
@@ -38,11 +38,10 @@ func numGen(ctx context.Context) chan int {
 		defer close(out)
 		for i := 0; ; i++ {
 			output := i % 26
-			//fmt.Printf("numGen output: %s\n", output)
 			select {
 			case out <- output:
 			case <-ctx.Done():
-				fmt.Println("numGen: Closing output channel")
+				fmt.Printf("numGen: Closing output channel, reason: %s\n", ctx.Err())
 				return
 			}
 		}
@@ -65,7 +64,7 @@ func merge(ctx context.Context, cs ...<-chan string) <-chan string {
 			select {
 			case out <- n:
 			case <-ctx.Done():
-				fmt.Println("merge: Stop consuming from fan-in input channel")
+				fmt.Printf("merge: Stop consuming from input channel, reason %s\n", ctx.Err())
 				// Also decrements the WaitGroup
 				return
 			}
@@ -81,40 +80,45 @@ func merge(ctx context.Context, cs ...<-chan string) <-chan string {
 	go func() {
 		wg.Wait()
 		close(out)
-		fmt.Println("merge: Closing the fan-in output channel")
+		fmt.Println("merge: Closing the output channel")
 	}()
 	return out
 }
 
 func main() {
-	// Don't search longer than 5 seconds
+	// Don't search longer than X seconds
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	ctxW1Val := context.WithValue(ctx, "prefix", "w1")
 	ctxW2Val := context.WithValue(ctx, "prefix", "w2")
+
 	nums := numGen(ctx)
 	// fan-out the values for nums across multiple wordGens.
-	ctxW1ValTimeout, _ := context.WithTimeout(ctxW1Val, 10000*time.Second)
+	ctxW1ValTimeout, cancelW1ValTimeout := context.WithTimeout(ctxW1Val, 10000*time.Second)
 	w1 := wordGen(ctxW1ValTimeout, nums) // prefix now comes from context
+	// Idempotent cancels of the children. Not really necessary
+	defer cancelW1ValTimeout()
 
-	ctxW2Timeout, _ := context.WithTimeout(ctxW2Val, 1*time.Second)
+	ctxW2Timeout, cancelW2Timeout := context.WithTimeout(ctxW2Val, 1*time.Second)
 	w2 := wordGen(ctxW2Timeout, nums)
+	// Idempotent cancels of the children. Not really necessary
+	defer cancelW2Timeout()
 
 	term := "w1: z"
 	// fan-in the wordGens using the `merge` function
 	for v := range merge(ctx, w1, w2) {
 		if v == term {
 			fmt.Printf("main: Found %s! Continuing...\n", term)
-			fmt.Println("Doing other stuff now, but all channels should be closed")
+			fmt.Println("main: Doing other stuff now, but all channels should be closed")
 			// Cancel the context instead of closing a channel
 			cancel()
 			break
 
 		} else {
-			time.Sleep(500 * time.Millisecond)
-			fmt.Printf("'%s' is not '%s'\n", v, term)
+			time.Sleep(100 * time.Millisecond)
+			fmt.Printf("main: '%s' is not '%s'\n", v, term)
 		}
 	}
-	fmt.Println("Finished doing other stuff!")
+	fmt.Println("main: Finished doing other stuff!")
 	time.Sleep(5 * time.Second) // Pretend we're doing other stuff for a while
 
 }

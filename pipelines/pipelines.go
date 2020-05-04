@@ -10,21 +10,20 @@ import (
 // It ends when either the `done` or `in` channel is closed.
 // It returns a channel that will receive letters prefixed with the `prefix` as strings.
 func wordGen(done <-chan struct{}, in <-chan int, prefix string) chan string {
-	alphabet := "abcdefghij"
+	alphabet := "abcdefghijklmnopqrstuvwxyz"
 	out := make(chan string, 1)
 	go func() {
 		defer close(out)
 		for v := range in {
 			output := fmt.Sprintf("%s: %s", prefix, string(alphabet[v]))
-			//fmt.Printf("wordGen output: %s\n", output)
 			select {
 			case out <- output:
 			case <-done:
-				fmt.Printf("Closing wordGen, %s, channel\n", prefix)
+				fmt.Printf("%s: Closing wordGen channel\n", prefix)
 				return
 			}
 		}
-		fmt.Printf("wordGen, %s, no more input from numGen channel\n", prefix)
+		fmt.Printf("%s: wordGen no more input from numGen channel\n", prefix)
 	}()
 	return out
 }
@@ -36,12 +35,11 @@ func numGen(done <-chan struct{}) chan int {
 	go func() {
 		defer close(out)
 		for i := 0; ; i++ {
-			output := i % 10
-			//fmt.Printf("numGen output: %s\n", output)
+			output := i % 26
 			select {
 			case out <- output:
 			case <-done:
-				fmt.Println("Closing numGen channel")
+				fmt.Println("numGen: Closing output channel")
 				return
 			}
 		}
@@ -64,7 +62,7 @@ func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 			select {
 			case out <- n:
 			case <-done:
-				fmt.Println("Stop consuming from fan-in input channel")
+				fmt.Println("merge: Stop consuming from input channel")
 				// Also decrements the WaitGroup
 				return
 			}
@@ -80,7 +78,7 @@ func merge(done <-chan struct{}, cs ...<-chan string) <-chan string {
 	go func() {
 		wg.Wait()
 		close(out)
-		fmt.Println("Closing the fan-in output channel")
+		fmt.Println("merge: Closing the output channel")
 	}()
 	return out
 }
@@ -102,9 +100,10 @@ func main() {
 		signal.
 	*/
 	// fan-in the wordGens using the `merge` function
+	// Interesting note: pipelines are similar to python generators in this case
 	for v := range merge(done, w1, w2) {
 		if v == term {
-			fmt.Printf("Found %s! Now main() can continue\n", term)
+			fmt.Printf("main: Found %s! Continuing...\n", term)
 			/* Could do this way instead of `defer close(done)`,
 			but this requires downstream receivers to know the number of upstream senders
 
@@ -114,15 +113,15 @@ func main() {
 
 			It is easier and more reliable to just close `done` once we are done consuming its output
 			*/
-			fmt.Println("Doing other stuff now, but all channels should be closed")
+			fmt.Println("main: Doing other stuff now, but all channels should be closed")
 			close(done)
 			break
 
 		} else {
-			fmt.Printf("'%s' is not '%s'\n", v, term)
+			fmt.Printf("main: '%s' is not '%s'\n", v, term)
 		}
 	}
-	fmt.Println("Other stuff being done")
+	fmt.Println("main: Other stuff being done")
 	time.Sleep(3 * time.Second) // Pretend we're doing other stuff for a while
 
 }
