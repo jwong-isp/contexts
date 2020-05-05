@@ -88,19 +88,27 @@ func merge(ctx context.Context, cs ...<-chan string) <-chan string {
 func main() {
 	// Don't search longer than X seconds
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Ensure this context is canceled
+	defer cancel()
+
 	ctxW1Val := context.WithValue(ctx, "prefix", "w1")
 	ctxW2Val := context.WithValue(ctx, "prefix", "w2")
 
 	nums := numGen(ctx)
 	// fan-out the values for nums across multiple wordGens.
+
+	// Set a timeout waaaay passed the parent's timeout
 	ctxW1ValTimeout, cancelW1ValTimeout := context.WithTimeout(ctxW1Val, 10000*time.Second)
 	w1 := wordGen(ctxW1ValTimeout, nums) // prefix now comes from context
-	// Idempotent cancels of the children. Not really necessary
+	// Idempotent cancels of the children. Not really necessary, but go will complain if
+	// contexts are not closed in all code paths.
 	defer cancelW1ValTimeout()
 
+	// Set a timeout that will happen quickly
 	ctxW2Timeout, cancelW2Timeout := context.WithTimeout(ctxW2Val, 1*time.Second)
 	w2 := wordGen(ctxW2Timeout, nums)
-	// Idempotent cancels of the children. Not really necessary
+	// Idempotent cancels of the children. Not really necessary, but go will complain if
+	// contexts are not closed in all code paths.
 	defer cancelW2Timeout()
 
 	term := "w1: z"
